@@ -30,7 +30,7 @@ from tenacity import (
 
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, is_bse_code
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
-from .us_index_mapping import get_us_index_yf_symbol, is_us_index_code, is_us_stock_code
+from .us_index_mapping import get_us_index_yf_symbol, is_us_index_code, is_us_stock_code, is_kl_stock_code
 import os
 
 logger = logging.getLogger(__name__)
@@ -70,9 +70,11 @@ class YfinanceFetcher(BaseFetcher):
         - A股深市：000001.SZ (Shenzhen Stock Exchange)
         - 港股：0700.HK (Hong Kong Stock Exchange)
         - 美股：AAPL, TSLA, GOOGL (无需后缀)
+        - 马股：1155.KL, 5347.KL (Bursa Malaysia)
+        - 全球指数：^FTSE, ^N225, ^HSI 等
 
         Args:
-            stock_code: 原始代码，如 '600519', 'hk00700', 'AAPL'
+            stock_code: 原始代码，如 '600519', 'hk00700', 'AAPL', '1155.KL'
 
         Returns:
             Yahoo Finance 格式代码
@@ -84,14 +86,21 @@ class YfinanceFetcher(BaseFetcher):
             '0700.HK'
             >>> fetcher._convert_stock_code('AAPL')
             'AAPL'
+            >>> fetcher._convert_stock_code('1155.KL')
+            '1155.KL'
         """
         code = stock_code.strip().upper()
 
-        # 美股指数：映射到 Yahoo Finance 符号（如 SPX -> ^GSPC）
+        # 全球指数（美股 / 欧洲 / 亚太）：映射到 Yahoo Finance 符号（如 SPX -> ^GSPC）
         yf_symbol, _ = get_us_index_yf_symbol(code)
         if yf_symbol:
-            logger.debug(f"识别为美股指数: {code} -> {yf_symbol}")
+            logger.debug(f"识别为全球指数: {code} -> {yf_symbol}")
             return yf_symbol
+
+        # 马股 (Bursa Malaysia)：保留 .KL 后缀原样返回
+        if is_kl_stock_code(code):
+            logger.debug(f"识别为马股代码: {code}")
+            return code
 
         # 美股：1-5 个大写字母（可选 .X 后缀），原样返回
         if is_us_stock_code(code):
@@ -106,7 +115,7 @@ class YfinanceFetcher(BaseFetcher):
             return f"{hk_code}.HK"
 
         # 已经包含后缀的情况
-        if '.SS' in code or '.SZ' in code or '.HK' in code or '.BJ' in code:
+        if '.SS' in code or '.SZ' in code or '.HK' in code or '.BJ' in code or '.KL' in code:
             return code
 
         # 去除可能的 .SH 后缀
